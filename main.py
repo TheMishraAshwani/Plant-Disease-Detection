@@ -1,3 +1,43 @@
+pip install gdown
+import gdown
+import os
+
+# URL of the dataset on Google Drive
+
+dataset_url = 'https://drive.google.com/uc? id=10QeUB2F9P6nYwJzJIsBK9p5J1q1WDpxs
+
+# Destination folder where the dataset will be downloaded
+dataset_folder = 'dataset'
+
+# Download the dataset
+if not os.path.exists(dataset_folder):
+    os.makedirs(dataset_folder)
+
+gdown.download(dataset_url, output=dataset_folder, quiet=False)
+
+
+
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Set up an ImageDataGenerator for preprocessing
+train_datagen = ImageDataGenerator(
+    rescale=1./255,  # Normalize pixel values to [0, 1]
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True)
+
+train_generator = train_datagen.flow_from_directory(
+    'path_to_train_data',  # Path to the directory containing training images
+    target_size=(512, 512),  # Resize images
+    batch_size=32,
+    class_mode='categorical')  # Change to 'binary' if it's a binary classification task
+
+# Train the model
+model.fit(train_generator, epochs=10)
+
+# Save the model after training
+model.save("my_trained_model.h5")
+
 import streamlit as st
 from PIL import Image
 import io
