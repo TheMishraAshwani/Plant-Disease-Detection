@@ -89,3 +89,5 @@ if uploaded_file != None:
     
     
     st.write(f"The plant {result['status']} with {result['prediction']} prediction.")
+
+# model used = https://drive.google.com/file/d/10QeUB2F9P6nYwJzJIsBK9p5J1q1WDpxs/view?usp=drivesdk
