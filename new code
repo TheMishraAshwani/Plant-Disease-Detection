@@ -1,0 +1,147 @@
+
+# Install necessary dependencies
+!pip install gdown
+!pip install tensorflow
+!pip install streamlit
+!pip install Pillow
+
+import gdown
+import os
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import streamlit as st
+from PIL import Image
+import io
+import numpy as np
+
+# Download the dataset from Google Drive
+dataset_url = 'https://drive.google.com/uc?export=download&id=1dmJNKdvyvoDnadvK33TXhsEEPI_Zryjh'
+dataset_folder = 'dataset'
+
+# Check if the folder exists, otherwise create it
+if not os.path.exists(dataset_folder):
+    os.makedirs(dataset_folder)
+
+# Download the dataset to the destination folder
+gdown.download(dataset_url, output=os.path.join(dataset_folder, 'plant_disease_dataset.zip'), quiet=False)
+
+# Unzip the dataset if necessary
+import zipfile
+with zipfile.ZipFile(os.path.join(dataset_folder, 'plant_disease_dataset.zip'), 'r') as zip_ref:
+    zip_ref.extractall(dataset_folder)
+
+# Set up an ImageDataGenerator for preprocessing and data augmentation
+train_datagen = ImageDataGenerator(
+    rescale=1./255,  # Normalize pixel values to [0, 1]
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True)
+
+train_generator = train_datagen.flow_from_directory(
+    os.path.join(dataset_folder, 'train'),  # Path to the training data folder
+    target_size=(512, 512),  # Resize images
+    batch_size=32,
+    class_mode='categorical')  # Set to 'binary' for binary classification
+
+# Define the model using Xception and DenseNet
+def build_model():
+    xception_model = tf.keras.models.Sequential([
+        tf.keras.applications.Xception(include_top=False, weights='imagenet', input_shape=(512, 512, 3)),
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dense(4, activation='softmax')
+    ])
+
+    densenet_model = tf.keras.models.Sequential([
+        tf.keras.applications.DenseNet121(include_top=False, weights='imagenet', input_shape=(512, 512, 3)),
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dense(4, activation='softmax')
+    ])
+
+    inputs = tf.keras.Input(shape=(512, 512, 3))
+
+    xception_output = xception_model(inputs)
+    densenet_output = densenet_model(inputs)
+
+    outputs = tf.keras.layers.average([densenet_output, xception_output])
+
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    return model
+
+# Initialize and compile the model
+model = build_model()
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Train the model
+model.fit(train_generator, epochs=10)
+
+# Save the trained model
+model.save("plant_disease_model.h5")
+
+# Define helper functions for the Streamlit app
+
+def clean_image(image):
+    # Function to preprocess the uploaded image (resize, normalize, etc.)
+    image = image.resize((512, 512))
+    image = np.array(image) / 255.0
+    return np.expand_dims(image, axis=0)
+
+def get_prediction(model, image):
+    predictions = model.predict(image)
+    class_idx = np.argmax(predictions, axis=-1)
+    return predictions, class_idx
+
+def make_results(predictions, predictions_arr):
+    # Map the class predictions to their corresponding labels
+    class_labels = ['Healthy', 'Disease 1', 'Disease 2', 'Disease 3']  # Example class labels
+    status = class_labels[predictions_arr[0]]
+    prediction_prob = predictions[0][predictions_arr[0]]
+    return {'status': status, 'prediction': f"{prediction_prob*100:.2f}%"}
+
+# Streamlit app setup
+@st.cache(allow_output_mutation=True)
+def load_model(path):
+    model = tf.keras.models.load_model(path)
+    return model
+
+# Hide Streamlit style
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# Load the trained model
+model_path = 'plant_disease_model.h5'
+model = load_model(model_path)
+
+# Streamlit app interface
+st.title('Plant Disease Detection')
+st.write("Upload a plant's leaf image and get a prediction of whether the plant is healthy or diseased.")
+
+# File uploader
+uploaded_file = st.file_uploader("Choose an image file", type=["png", "jpg"])
+
+if uploaded_file is not None:
+    # Show progress bar and process the uploaded image
+    progress = st.text("Crunching Image...")
+    my_bar = st.progress(0)
+
+    # Display the uploaded image
+    image = Image.open(io.BytesIO(uploaded_file.read()))
+    st.image(np.array(image).resize((700, 400), Image.ANTIALIAS), use_column_width=True)
+
+    my_bar.progress(40)
+
+    # Preprocess the image
+    image = clean_image(image)
+    predictions, predictions_arr = get_prediction(model, image)
+    my_bar.progress(70)
+
+    # Get the result
+    result = make_results(predictions, predictions_arr)
+    my_bar.progress(100)
+
+    # Display the prediction result
+    st.write(f"The plant is {result['status']} with a {result['prediction']} prediction.")
